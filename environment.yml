@@ -1,0 +1,12 @@
+name: nalms-alarm-tree-editor
+channels:
+  - conda-forge
+dependencies:
+  - python=3.7
+  - pyqt=5
+  - pip
+  - numpy
+  - scipy
+  - six
+  - psutil
+  - pyqtgraph

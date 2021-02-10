@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<config name="Test">
+    <component name="Area1">
+        <automated_action>
+            <title>Area1 Action Title 1</title>
+            <details>Area1 Action Detail 1</details>
+            <delay>5</delay>
+        </automated_action>
+        <automated_action>
+            <title>Area1 Action Title 2</title>
+            <details>Area1 Action Detail 2</details>
+            <delay>6</delay>
+        </automated_action>
+        <command>
+            <title>Area1 Command Title 1</title>
+            <details>Area1 Command Detail 1</details>
+        </command>
+        <command>
+            <title>Area1 Command Title 2</title>
+            <details>Area1 Command Detail 2</details>
+        </command>
+        <pv name="a1pv1">
+            <description>a1pv1 description</description>
+            <enabled>true</enabled>
+            <latching>true</latching>
+            <annunciating>true</annunciating>
+            <delay>4</delay>
+            <count>5</count>
+            <filter>a1pv1 filter</filter>
+            <command>
+                <title>a1pv1 Command Title 1</title>
+                <details>a1pv1 Command Detail 1</details>
+            </command>
+        </pv>"
+        <pv name="a1pv2">
+            <description>a1pv2 description</description>
+            <enabled>true</enabled>
+            <latching>true</latching>
+            <annunciating>true</annunciating>
+        </pv>
+    </component>
+    <component name="Area2">
+        <component name="Area3">
+            <pv name="a3pv1">
+                <description>a3pv1 description</description>
+                <enabled>true</enabled>
+                <latching>true</latching>
+                <annunciating>true</annunciating>
+            </pv>
+        </component>
+        <pv name="a2pv1">
+            <description>a2pv1 description</description>
+            <enabled>true</enabled>
+            <latching>true</latching>
+            <annunciating>true</annunciating>
+        </pv>
+    </component>
+</config>
