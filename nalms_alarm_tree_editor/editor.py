@@ -24,11 +24,22 @@ class PhoebusConfigTool:
 
     def __init__(self):
         self._nodes = []
+        self._tree = None
+        self._root = None
+
+    def _clear(self):
+        self._tree = None
+        self._root = None
+        self._nodes = []
 
     def parse_config(self, filename):
         """
         Parses a configuration file
         """
+        #clear
+        self._clear()
+
+        # parse filename
         self._tree = ET.parse(filename)
         self._root = self._tree.getroot()
 
@@ -95,24 +106,27 @@ class PhoebusConfigTool:
 
         for child in group:
             if child.tag == "component":
-                self._handle_group(child, group_idx)
+                self._handle_group_parse(child, group_idx)
 
             elif child.tag == "pv":
-                self._handle_pv(child, group_idx)
+                self._handle_pv_parse(child, group_idx)
 
 
-    def save_configuration(self, nodes, config_name, filename):
-        self._build_config(nodes, config_name)
-        
+    def save_configuration(self, root_node, config_name, filename):
+        # disregard root and create new
+        self._build_config(root_node, config_name)
+
         with open (filename, "wb") as f : 
-            file_str = ET.tostring(self._tree, encoding='utf8') 
+            file_str = ET.tostring(self._tree, encoding='utf8')
             f.write(file_str)
 
     
-    def _build_config(self, nodes, config_name):
+    def _build_config(self, root_node, config_name):
+        # clear tree and start again
+        self._tree = ET.ElementTree()
         self._tree = ET.Element("config", name=config_name)
 
-        for node in nodes:
+        for node in root_node.children:
             
             #if children, is a group
             if node.child_count():
@@ -167,59 +181,22 @@ class PhoebusConfigTool:
 
     def _handle_group_add(self, group, parent):
         group_comp = ET.SubElement(parent, 'component', name=group.label)
-        self._handle_property_add(group_comp, group)
 
-        for child in self.group.children:
+        # don't add properties for group
+        for child in group.children:
 
             if child.child_count():
-                self._handle_group_add(child, group)
+                self._handle_group_add(child, group_comp)
 
             else:
-                self._handle_pv_add(child, group)
+                self._handle_pv_add(child, group_comp)
 
 
     def _handle_pv_add(self, pv, parent):
         pv_comp = ET.SubElement(parent, 'pv', name=pv.label)
-        self._handle_property_add(group_comp, pv)
+        self._handle_property_add(pv_comp, pv)
 
 
-        
-
-
-
-"""
-def handle_children(builder, tree, node, parent_group=None):
-    children = tree.children(node.identifier)
-
-    if children:
-        builder.add_group(node.tag, node.data, parent_group=parent_group)
-
-        for child in children:
-            if isinstance(child.data, AlarmLeaf):
-                builder.add_pv(child.tag, node.tag, child.data)
-
-            elif isinstance(child.data, AlarmNode):
-                handle_children(builder, tree, child, parent_group=node.tag)
-
-
-
-    def add_pv(self, pvname, group, data):
-        if pvname in self.added_pvs:
-            pass
-
-        else:
-            self.added_pvs.append(pvname)
-            pv = ET.SubElement(self.groups[group], "pv", name=pvname)
-        #    description = ET.SubElement(pv, "description")
-            enabled = ET.SubElement(pv, "enabled")
-            enabled.text = 'true'
-
-            if data.force_pv is not None:
-                filter_pv = ET.SubElement(pv, "filter")
-                filter_pv.text = self._process_forcepv(data.force_pv)
-
-"""
-        
 
 class AlarmTreeEditorDisplay(Display):
     def __init__(self):
@@ -254,6 +231,8 @@ class AlarmTreeEditorDisplay(Display):
         # default open size
         self.resize(800, 600)
 
+        self.config_tool = PhoebusConfigTool()
+
 
     def setup_ui(self):
         self.main_layout = QGridLayout()
@@ -265,7 +244,7 @@ class AlarmTreeEditorDisplay(Display):
 
         # create the tree view layout and add/remove buttons
         self.tree_view_layout = QVBoxLayout()
-        self.tree_view = PyDMAlarmTree(self)
+        self.tree_view = PyDMAlarmTree(self, config_name="UNITITLED")
         self.tree_view.setEditTriggers(QAbstractItemView.DoubleClicked)
         self.tree_view.setSelectionMode(QAbstractItemView.SingleSelection)
         self.tree_view.setSelectionBehavior(QAbstractItemView.SelectRows)
@@ -282,7 +261,7 @@ class AlarmTreeEditorDisplay(Display):
         self.tree_view.setColumnWidth(2, 160)
 
         # lable for tree view
-        self.tree_label = QLabel("Tree")
+        self.tree_label = QLabel("Untitled")
 
         self.tree_view_layout.addWidget(self.tree_label)
         self.tree_view_layout.addWidget(self.tree_view)
@@ -301,12 +280,8 @@ class AlarmTreeEditorDisplay(Display):
         # add the tree view to the window
         self.main_layout.addLayout(self.tree_view_layout, 0, 0)
 
-
-        self.properties_label = QLabel("Alarm Properties")
-      
-
+        # crate property view 
         self.property_view_layout = QGridLayout()
-
         self.property_view_layout.addWidget(QLabel("Alarm Properties"), 0, 0)
 
         # add label
@@ -314,22 +289,22 @@ class AlarmTreeEditorDisplay(Display):
         self.property_view_layout.addWidget(QLabel("LABEL"), 1, 0)
         self.property_view_layout.addWidget(self.label_edit, 1, 1, 1, 3)
 
-
         # add description
         self.description_edit = QLineEdit()
         self.property_view_layout.addWidget(QLabel("DESCRIPTION"), 2, 0)
         self.property_view_layout.addWidget(self.description_edit, 2, 1, 1, 3)
 
-
         # add delay
         self.delay_edit = QLineEdit()
         self.property_view_layout.addWidget(QLabel("DELAY"), 3, 0)
         self.property_view_layout.addWidget(self.delay_edit, 3, 1, 1, 3)
+        self.delay_edit.setValidator(QtGui.QIntValidator())
 
         # add count
         self.count_edit = QLineEdit()
         self.property_view_layout.addWidget(QLabel("COUNT"), 4, 0)
         self.property_view_layout.addWidget(self.count_edit, 4, 1, 1, 3)
+        self.count_edit.setValidator(QtGui.QIntValidator())
 
         # enabled, latching, annunciating
         self.enabled_check = QCheckBox("ENABLED")
@@ -353,9 +328,7 @@ class AlarmTreeEditorDisplay(Display):
         
         self.property_view_layout.addWidget(self.button_box, 7, 2)
 
-
         # TODO: command, automated actions tables
-
         self.main_layout.addLayout(self.property_view_layout, 0, 1)
 
         self.setWindowTitle("Alarm Tree Editor")
@@ -383,8 +356,8 @@ class AlarmTreeEditorDisplay(Display):
             model.set_data(child, label="NEW_PV",
                     role=QtCore.Qt.EditRole)
 
-        self.tree_view.selectionModel().setCurrentIndex(model.index(0, 0, index),
-                QtCore.QItemSelectionModel.ClearAndSelect)
+     #   self.tree_view.selectionModel().setCurrentIndex(model.index(0, 0, index),
+     #           QtCore.QItemSelectionModel.ClearAndSelect)
                 
     def removeItem(self):
         index = self.tree_view.selectionModel().currentIndex()
@@ -401,13 +374,9 @@ class AlarmTreeEditorDisplay(Display):
                                     enabled=self.enabled_check.isChecked(),
                                     annunciating=self.annunciating_check.isChecked(),
                                     latching=self.latching_check.isChecked(),
+                                    role=QtCore.Qt.EditRole
                                     )
 
-    #DEPRECATE
-    @Slot()
-    def save_configuration(self):
-        pass
-        #
 
     @Slot()
     def handle_selection(self):
@@ -422,22 +391,37 @@ class AlarmTreeEditorDisplay(Display):
         self.delay_edit.setText(item.delay)
         self.count_edit.setText(item.count)
 
-        if item.enabled:
-            self.enabled_check.setChecked(True)
+
+        if item.is_group:
+            self.description_edit.setEnabled(False)
+            self.count_edit.setEnabled(False)
+            self.delay_edit.setEnabled(False)
+            self.latching_check.setEnabled(False)
+            self.annunciating_check.setEnabled(False)
+        
         else:
-            self.enabled_check.setChecked(False)
+            self.description_edit.setEnabled(True)
+            self.count_edit.setEnabled(True)
+            self.delay_edit.setEnabled(True)
+            self.latching_check.setEnabled(True)
+            self.annunciating_check.setEnabled(True)
+
+            if item.enabled:
+                self.enabled_check.setChecked(True)
+            else:
+                self.enabled_check.setChecked(False)
 
 
-        if item.latching:
-            self.latching_check.setChecked(True)
-        else:
-            self.latching_check.setChecked(False)
+            if item.latching:
+                self.latching_check.setChecked(True)
+            else:
+                self.latching_check.setChecked(False)
 
 
-        if item.annunciating:
-            self.annunciating_check.setChecked(True)
-        else:
-            self.annunciating_check.setChecked(False)
+            if item.annunciating:
+                self.annunciating_check.setChecked(True)
+            else:
+                self.annunciating_check.setChecked(False)
 
 
     @Slot()
@@ -447,6 +431,7 @@ class AlarmTreeEditorDisplay(Display):
 
         self.description_edit.setText(item.description)
         self.label_edit.setText(item.label)
+
         self.delay_edit.setText(item.delay)
         self.count_edit.setText(item.count)
 
@@ -455,33 +440,37 @@ class AlarmTreeEditorDisplay(Display):
         else:
             self.enabled_check.setChecked(False)
 
-
-        if item.latching:
-            self.latching_check.setChecked(True)
+        
+        if item.is_group:
+            self.description_edit.setEnabled(False)
+            self.count_edit.setEnabled(False)
+            self.delay_edit.setEnabled(False)
+            self.latching_check.setEnabled(False)
+            self.annunciating_check.setEnabled(False)
+        
         else:
-            self.latching_check.setChecked(False)
+            self.description_edit.setEnabled(True)
+            self.count_edit.setEnabled(True)
+            self.delay_edit.setEnabled(True)
+            self.latching_check.setEnabled(True)
+            self.annunciating_check.setEnabled(True)
+        
+            if item.latching:
+                self.latching_check.setChecked(True)
+            else:
+                self.latching_check.setChecked(False)
 
 
-        if item.annunciating:
-            self.annunciating_check.setChecked(True)
-        else:
-            self.annunciating_check.setChecked(False)
+            if item.annunciating:
+                self.annunciating_check.setChecked(True)
+            else:
+                self.annunciating_check.setChecked(False)
 
-
-    @Slot()
-    def item_name_changed(self):
-        index = self.tree_view.selectionModel().currentIndex()
-        pass
 
     def ui_filepath(self):
         # No UI file is being used
         return None
 
-
-    def to_xml(self):
-        pass
-
-        #iterate over xml
 
     @Slot(bool)
     def open_file(self, checked):
@@ -506,11 +495,24 @@ class AlarmTreeEditorDisplay(Display):
 
 
     def import_configuration(self, filename):
-
-        config_tool = PhoebusConfigTool()
-        nodes = config_tool.parse_config("test_config.xml")
-
+        nodes = self.config_tool.parse_config(filename)
         self.tree_view.model().import_hierarchy(nodes)
+        self.tree_label.setText(self.tree_view.model()._nodes[0].label)
+
+
+    @Slot()
+    def save_configuration(self):
+        modifiers = QApplication.keyboardModifiers()
+        try:
+            curr_file = self.current_file()
+            folder = os.path.dirname(curr_file)
+        except Exception:
+            folder = os.getcwd()
+
+        filename = QFileDialog.getSaveFileName(self, 'Save File...', folder, 'Configration files (*.xml)')
+        filename = filename[0] if isinstance(filename, (list, tuple)) else filename
+
+        self.config_tool.save_configuration(self.tree_view.model()._root_item, "TEST", filename)
 
         
 
