@@ -2,6 +2,7 @@ import os
 import json
 from qtpy import QtCore
 from pydm import Display
+from pydm import exception
 from pydm.widgets import PyDMEmbeddedDisplay, PyDMAlarmTree
 from pydm.utilities import connection
 
@@ -11,6 +12,9 @@ from qtpy.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QTreeView, QTable
 from qtpy.QtCore import Qt, Slot, QModelIndex, QItemSelection
 from qtpy import QtCore, QtGui
 from qtpy.QtDesigner import QDesignerFormWindowInterface
+
+from nalms_alarm_tree_editor.alh_conversion import convert_alh_to_phoebus
+
 from collections import OrderedDict
 import xml.etree.ElementTree as ET
 
@@ -112,19 +116,19 @@ class PhoebusConfigTool:
                 self._handle_pv_parse(child, group_idx)
 
 
-    def save_configuration(self, root_node, config_name, filename):
+    def save_configuration(self, root_node, filename):
         # disregard root and create new
-        self._build_config(root_node, config_name)
+        self._build_config(root_node)
 
         with open (filename, "wb") as f : 
             file_str = ET.tostring(self._tree, encoding='utf8')
             f.write(file_str)
 
     
-    def _build_config(self, root_node, config_name):
+    def _build_config(self, root_node):
         # clear tree and start again
         self._tree = ET.ElementTree()
-        self._tree = ET.Element("config", name=config_name)
+        self._tree = ET.Element("config", name=root_node.label)
 
         for node in root_node.children:
             
@@ -228,6 +232,9 @@ class AlarmTreeEditorDisplay(Display):
         self.save_config_action.triggered.connect(self.save_configuration)
         self.toolbar.addAction(self.save_config_action)
 
+        # update configuration name
+        self.tree_label.editingFinished.connect(self._update_config_name)
+
         # default open size
         self.resize(800, 600)
 
@@ -244,7 +251,7 @@ class AlarmTreeEditorDisplay(Display):
 
         # create the tree view layout and add/remove buttons
         self.tree_view_layout = QVBoxLayout()
-        self.tree_view = PyDMAlarmTree(self, config_name="UNITITLED")
+        self.tree_view = PyDMAlarmTree(self, config_name="UNITITLED", edit_mode=True)
         self.tree_view.setEditTriggers(QAbstractItemView.DoubleClicked)
         self.tree_view.setSelectionMode(QAbstractItemView.SingleSelection)
         self.tree_view.setSelectionBehavior(QAbstractItemView.SelectRows)
@@ -261,9 +268,14 @@ class AlarmTreeEditorDisplay(Display):
         self.tree_view.setColumnWidth(2, 160)
 
         # lable for tree view
-        self.tree_label = QLabel("Untitled")
+        configuration_indicator = QLabel("Configuration:")
+        self.tree_label = QLineEdit("Untitled")
 
-        self.tree_view_layout.addWidget(self.tree_label)
+        self.tree_label_layout = QHBoxLayout()
+        self.tree_label_layout.addWidget(configuration_indicator)
+        self.tree_label_layout.addWidget(self.tree_label)
+
+        self.tree_view_layout.addLayout(self.tree_label_layout)
         self.tree_view_layout.addWidget(self.tree_view)
 
         # add/ remove buttons
@@ -281,8 +293,14 @@ class AlarmTreeEditorDisplay(Display):
         self.main_layout.addLayout(self.tree_view_layout, 0, 0)
 
         # crate property view 
+        self.property_layout = QVBoxLayout()
+        self.property_label_layout = QHBoxLayout()
+        self.property_label_layout.addWidget(QLabel("Alarm Properties"))
+        self.property_layout.addLayout(self.property_label_layout)
+
+
         self.property_view_layout = QGridLayout()
-        self.property_view_layout.addWidget(QLabel("Alarm Properties"), 0, 0)
+
 
         # add label
         self.label_edit = QLineEdit()
@@ -328,11 +346,15 @@ class AlarmTreeEditorDisplay(Display):
         
         self.property_view_layout.addWidget(self.button_box, 7, 2)
 
+        self.property_layout.addLayout(self.property_view_layout)
+
         # TODO: command, automated actions tables
-        self.main_layout.addLayout(self.property_view_layout, 0, 1)
+        self.main_layout.addLayout(self.property_layout, 0, 1)
 
         self.setWindowTitle("Alarm Tree Editor")
         self.tree_view.expandAll()
+
+
 
     def minimumSizeHint(self):
         # This is the default recommended size
@@ -353,11 +375,9 @@ class AlarmTreeEditorDisplay(Display):
 
         for column in range(model.columnCount(index)):
             child = model.index(0, column, index)
-            model.set_data(child, label="NEW_PV",
+            model.set_data(child, label="NEW_ITEM",
                     role=QtCore.Qt.EditRole)
 
-     #   self.tree_view.selectionModel().setCurrentIndex(model.index(0, 0, index),
-     #           QtCore.QItemSelectionModel.ClearAndSelect)
                 
     def removeItem(self):
         index = self.tree_view.selectionModel().currentIndex()
@@ -481,12 +501,22 @@ class AlarmTreeEditorDisplay(Display):
         except Exception:
             folder = os.getcwd()
 
-        filename = QFileDialog.getOpenFileName(self, 'Open File...', folder, 'Configration files (*.xml)')
+        filename = QFileDialog.getOpenFileName(self, 'Open File...', folder, 'Configration files (*.xml, *.alhConfig)')
         filename = filename[0] if isinstance(filename, (list, tuple)) else filename
 
         if filename:
             filename = str(filename)
-            self.import_configuration(filename)
+
+            # if alh file selected, open conversion prompt
+            if filename[-9:] == "alhConfig":
+                self.legacy_window = LegacyWindow(filename)
+                self.legacy_window.exec_()
+
+                self.import_configuration(self.legacy_window.converted_filename)
+
+
+            else:
+                self.import_configuration(filename)
 
             # TODO: implement file handler open exception handling
             #except (IOError, OSError, ValueError, ImportError) as e:
@@ -512,9 +542,74 @@ class AlarmTreeEditorDisplay(Display):
         filename = QFileDialog.getSaveFileName(self, 'Save File...', folder, 'Configration files (*.xml)')
         filename = filename[0] if isinstance(filename, (list, tuple)) else filename
 
-        self.config_tool.save_configuration(self.tree_view.model()._root_item, "TEST", filename)
+        self.config_tool.save_configuration(self.tree_view.model()._root_item, filename)
+
+    def _update_config_name(self):
+        name = self.tree_label.text()
+        self.tree_view.model()._nodes[0].label = name
+
+    def _import_legacy_file(self):
+
+        convert_alh_to_phoebus()
+
+
+
+
+class LegacyWindow(QDialog):
+
+    def __init__(self, filename, parent=None):
+        super(LegacyWindow, self).__init__(parent)
+
+        self.parent = parent
+
+        self.legacy_filename = filename
+        self.converted_filename = None
+
+        # Create widgets
+        self.dialog = QLabel("You have chosen a legacy file (alhConfig). Opening this file requires conversion to the Phoebus Alarm Server format. Would you like to continue?")
+        self.dialog.setWordWrap(True)
+
+        self.cancel_button = QPushButton("Cancel")
+        self.convert_button = QPushButton("Convert File")
+
+        # Create layout and add widgets
+
+        layout = QVBoxLayout()
+        layout.addWidget(self.dialog)
+
+        button_box = QHBoxLayout()
+        button_box.addWidget(self.cancel_button)
+        button_box.addWidget(self.convert_button)
+
+        layout.addLayout(button_box)
+
+        self.setLayout(layout)
+
+        self.cancel_button.clicked.connect(self.reject)
+        self.convert_button.clicked.connect(self._open_file_selection)
+
+    @Slot()
+    def _open_file_selection(self):
+        modifiers = QApplication.keyboardModifiers()
+        try:
+            curr_file = self.current_file()
+            folder = os.path.dirname(curr_file)
+        except Exception:
+            folder = os.getcwd()
+
+        filename = QFileDialog.getSaveFileName(self, 'Save File...', folder, 'Configration files (*.xml)')
+        filename = filename[0] if isinstance(filename, (list, tuple)) else filename
+
+
+        convert_alh_to_phoebus(self.legacy_filename, filename)
+        self.converted_filename = filename
+        self.accept()
 
         
+
+
+
+
 
 
 
