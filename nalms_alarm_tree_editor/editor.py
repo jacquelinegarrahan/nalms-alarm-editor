@@ -86,7 +86,7 @@ class PhoebusConfigTool:
                 data["count"] = child.text
 
             elif child.tag == "filter":
-                data["filter"] = child.text
+                data["alarm_filter"] = child.text
 
             elif child.tag == "command":
                 pass # TODO
@@ -182,6 +182,9 @@ class PhoebusConfigTool:
             count = ET.SubElement(elem, "count")
             count.text = alarm_tree_item.count
 
+        if alarm_tree_item.alarm_filter:
+            alarm_filter = ET.SubElement(elem, "filter")
+            alarm_filter.text = alarm_tree_item.alarm_filter
 
     def _handle_group_add(self, group, parent):
         group_comp = ET.SubElement(parent, 'component', name=group.label)
@@ -324,13 +327,19 @@ class AlarmTreeEditorDisplay(Display):
         self.property_view_layout.addWidget(self.count_edit, 4, 1, 1, 3)
         self.count_edit.setValidator(QtGui.QIntValidator())
 
+        # add filter/force pv 
+        self.filter_edit = QLineEdit()
+        self.property_view_layout.addWidget(QLabel("ENABLING FILTER"), 5, 0)
+        self.property_view_layout.addWidget(self.filter_edit, 5, 1, 1, 3)
+
+
         # enabled, latching, annunciating
         self.enabled_check = QCheckBox("ENABLED")
         self.annunciating_check = QCheckBox("ANNUNCIATING")
         self.latching_check = QCheckBox("LATCHING")
-        self.property_view_layout.addWidget(self.enabled_check, 5, 0)
-        self.property_view_layout.addWidget(self.annunciating_check, 5, 1)
-        self.property_view_layout.addWidget(self.latching_check, 5, 2)
+        self.property_view_layout.addWidget(self.enabled_check, 6, 0)
+        self.property_view_layout.addWidget(self.annunciating_check, 6, 1)
+        self.property_view_layout.addWidget(self.latching_check, 6, 2)
 
 
         spacer = QSpacerItem(40, 200, QSizePolicy.Expanding,
@@ -394,6 +403,7 @@ class AlarmTreeEditorDisplay(Display):
                                     enabled=self.enabled_check.isChecked(),
                                     annunciating=self.annunciating_check.isChecked(),
                                     latching=self.latching_check.isChecked(),
+                                    alarm_filter = self.filter_edit.text(),
                                     role=QtCore.Qt.EditRole
                                     )
 
@@ -410,6 +420,7 @@ class AlarmTreeEditorDisplay(Display):
         self.label_edit.setText(item.label)
         self.delay_edit.setText(item.delay)
         self.count_edit.setText(item.count)
+        self.filter_edit.setText(item.alarm_filter)
 
 
         if item.is_group:
@@ -418,6 +429,7 @@ class AlarmTreeEditorDisplay(Display):
             self.delay_edit.setEnabled(False)
             self.latching_check.setEnabled(False)
             self.annunciating_check.setEnabled(False)
+            self.filter_edit.setEnabled(False)
         
         else:
             self.description_edit.setEnabled(True)
@@ -425,6 +437,7 @@ class AlarmTreeEditorDisplay(Display):
             self.delay_edit.setEnabled(True)
             self.latching_check.setEnabled(True)
             self.annunciating_check.setEnabled(True)
+            self.filter_edit.setEnabled(True)
 
             if item.enabled:
                 self.enabled_check.setChecked(True)
@@ -467,6 +480,7 @@ class AlarmTreeEditorDisplay(Display):
             self.delay_edit.setEnabled(False)
             self.latching_check.setEnabled(False)
             self.annunciating_check.setEnabled(False)
+            self.filter_edit.setEnabled(False)
         
         else:
             self.description_edit.setEnabled(True)
@@ -474,6 +488,7 @@ class AlarmTreeEditorDisplay(Display):
             self.delay_edit.setEnabled(True)
             self.latching_check.setEnabled(True)
             self.annunciating_check.setEnabled(True)
+            self.filter_edit.setEnabled(True)
         
             if item.latching:
                 self.latching_check.setChecked(True)
@@ -501,7 +516,7 @@ class AlarmTreeEditorDisplay(Display):
         except Exception:
             folder = os.getcwd()
 
-        filename = QFileDialog.getOpenFileName(self, 'Open File...', folder, 'Configration files (*.xml, *.alhConfig)')
+        filename = QFileDialog.getOpenFileName(self, 'Open File...', folder, 'XML (*.xml);; ALH Config (*.alhConfig)')
         filename = filename[0] if isinstance(filename, (list, tuple)) else filename
 
         if filename:
@@ -512,16 +527,12 @@ class AlarmTreeEditorDisplay(Display):
                 self.legacy_window = LegacyWindow(filename)
                 self.legacy_window.exec_()
 
-                self.import_configuration(self.legacy_window.converted_filename)
+                if self.legacy_window.converted_filename:
+                    self.import_configuration(self.legacy_window.converted_filename)
 
 
             else:
                 self.import_configuration(filename)
-
-            # TODO: implement file handler open exception handling
-            #except (IOError, OSError, ValueError, ImportError) as e:
-            #    self.handle_open_file_error(filename, e)
-
 
 
     def import_configuration(self, filename):
@@ -566,7 +577,7 @@ class LegacyWindow(QDialog):
         self.converted_filename = None
 
         # Create widgets
-        self.dialog = QLabel("You have chosen a legacy file (alhConfig). Opening this file requires conversion to the Phoebus Alarm Server format. Would you like to continue?")
+        self.dialog = QLabel("You have chosen a legacy file (.alhConfig). Opening this file requires conversion to the Phoebus Alarm Server format. Would you like to continue?")
         self.dialog.setWordWrap(True)
 
         self.cancel_button = QPushButton("Cancel")
